@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__filesystem__list_directory",
+      "mcp__filesystem__create_directory",
+      "Bash(npm install:*)",
+      "Bash(npx vue-tsc:*)"
+    ]
+  }
+}
