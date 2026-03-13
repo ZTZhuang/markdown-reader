@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useFileStore } from '../composables/useFileStore'
 import { fileOps } from '../db'
@@ -200,10 +200,6 @@ const getFolderFileCount = (folderId: number): number => {
   return folderFileCounts.value.get(folderId) || 0
 }
 
-// 检查文件夹是否有文件
-const hasFolderFiles = (folderId: number): boolean => {
-  return getFolderFileCount(folderId) > 0
-}
 </script>
 
 <template>

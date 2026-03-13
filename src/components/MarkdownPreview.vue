@@ -8,25 +8,25 @@ const props = defineProps<{
 }>()
 
 const previewRef = ref<HTMLElement | null>(null)
+const escapeHtml = new MarkdownIt().utils.escapeHtml
 
-// 配置 markdown-it
 const md = new MarkdownIt({
   html: true,
   linkify: true,
   typographer: true,
-  highlight: function (str: string, lang: string) {
+  highlight(str: string, lang: string): string {
     if (lang && hljs.getLanguage(lang)) {
       try {
         return `<pre class="hljs"><code>${hljs.highlight(str, { language: lang, ignoreIllegals: true }).value}</code></pre>`
-      } catch (e) {
-        console.error(e)
+      } catch (error) {
+        console.error(error)
       }
     }
-    return `<pre class="hljs"><code>${md.utils.escapeHtml(str)}</code></pre>`
+
+    return `<pre class="hljs"><code>${escapeHtml(str)}</code></pre>`
   }
 })
 
-// 启用 GFM 扩展（任务列表等）
 md.enable(['link', 'image'])
 
 const renderedContent = computed(() => {
@@ -34,25 +34,29 @@ const renderedContent = computed(() => {
   return md.render(props.content)
 })
 
-// 处理代码块语言标识
 onMounted(() => {
   addCopyButtons()
 })
 
-watch(() => props.content, () => {
-  setTimeout(addCopyButtons, 100)
-})
+watch(
+  () => props.content,
+  () => {
+    setTimeout(addCopyButtons, 100)
+  }
+)
 
 function addCopyButtons() {
   if (!previewRef.value) return
+
   const codeBlocks = previewRef.value.querySelectorAll('pre')
   codeBlocks.forEach((block) => {
     if (block.querySelector('.copy-btn')) return
+
     block.style.position = 'relative'
 
     const copyBtn = document.createElement('button')
     copyBtn.className = 'copy-btn'
-    copyBtn.textContent = '复制'
+    copyBtn.textContent = 'Copy'
     copyBtn.style.cssText = `
       position: absolute;
       top: 8px;
@@ -66,33 +70,41 @@ function addCopyButtons() {
       opacity: 0;
       transition: opacity 0.2s;
     `
+
     copyBtn.onclick = async () => {
       const code = block.querySelector('code')?.textContent || ''
+
       try {
         await navigator.clipboard.writeText(code)
-        copyBtn.textContent = '已复制'
-        setTimeout(() => { copyBtn.textContent = '复制' }, 2000)
-      } catch (e) {
-        console.error('复制失败', e)
+        copyBtn.textContent = 'Copied'
+        setTimeout(() => {
+          copyBtn.textContent = 'Copy'
+        }, 2000)
+      } catch (error) {
+        console.error('Copy failed', error)
       }
     }
 
     block.appendChild(copyBtn)
-    block.addEventListener('mouseenter', () => { copyBtn.style.opacity = '1' })
-    block.addEventListener('mouseleave', () => { copyBtn.style.opacity = '0' })
+    block.addEventListener('mouseenter', () => {
+      copyBtn.style.opacity = '1'
+    })
+    block.addEventListener('mouseleave', () => {
+      copyBtn.style.opacity = '0'
+    })
   })
 }
 
-// 处理链接点击（在新窗口打开）
-function handleContentClick(e: MouseEvent) {
-  const target = e.target as HTMLElement
-  if (target.tagName === 'A') {
-    e.preventDefault()
-    const href = target.getAttribute('href')
-    if (href && (href.startsWith('http://') || href.startsWith('https://'))) {
-      window.open(href, '_blank', 'noopener,noreferrer')
-    }
-  }
+function handleContentClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null
+  const anchor = target?.closest('a') as HTMLAnchorElement | null
+  const href = anchor?.getAttribute('href')
+
+  if (!href) return
+  if (!href.startsWith('http://') && !href.startsWith('https://')) return
+
+  event.preventDefault()
+  window.open(href, '_blank', 'noopener,noreferrer')
 }
 </script>
 
@@ -112,7 +124,6 @@ function handleContentClick(e: MouseEvent) {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* 移动端代码块优化 */
 .markdown-body pre {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -123,14 +134,12 @@ function handleContentClick(e: MouseEvent) {
   word-break: normal;
 }
 
-/* 表格滚动 */
 .markdown-body table {
   display: block;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-/* 移动端复制按钮触摸优化 */
 .markdown-body .copy-btn {
   min-height: 32px;
   min-width: 48px;

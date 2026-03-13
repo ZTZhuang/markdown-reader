@@ -4,7 +4,7 @@ import { useFileStore } from '../composables/useFileStore'
 import Sidebar from '../components/Sidebar.vue'
 import MarkdownPreview from '../components/MarkdownPreview.vue'
 
-const { currentFile, currentFolder, loadFolders, selectFolder, folders, hasPrevFile, hasNextFile, prevFile, nextFile, currentFileIndex, files } = useFileStore()
+const { currentFile, currentFolder, loadFolders,  hasPrevFile, hasNextFile, prevFile, nextFile, currentFileIndex, files } = useFileStore()
 
 const sidebarOpen = ref(false)
 const isMobile = ref(false)
