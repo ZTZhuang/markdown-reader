@@ -8,12 +8,15 @@ const props = defineProps<{
 }>()
 
 const previewRef = ref<HTMLElement | null>(null)
+// 兜底高亮失败场景，确保代码内容不会被当作 HTML 注入
 const escapeHtml = new MarkdownIt().utils.escapeHtml
 
+// Markdown 渲染器：启用 HTML、链接识别和排版增强
 const md = new MarkdownIt({
   html: true,
   linkify: true,
   typographer: true,
+  // 代码块高亮：识别语言时走 highlight.js，失败时回退转义文本
   highlight(str: string, lang: string): string {
     if (lang && hljs.getLanguage(lang)) {
       try {
@@ -29,6 +32,7 @@ const md = new MarkdownIt({
 
 md.enable(['link', 'image'])
 
+// 内容变化时重新生成 HTML 预览
 const renderedContent = computed(() => {
   if (!props.content) return ''
   return md.render(props.content)
@@ -41,6 +45,7 @@ onMounted(() => {
 watch(
   () => props.content,
   () => {
+    // 等待 v-html 更新后再扫描代码块，避免拿到旧 DOM
     setTimeout(addCopyButtons, 100)
   }
 )
@@ -48,6 +53,7 @@ watch(
 function addCopyButtons() {
   if (!previewRef.value) return
 
+  // 给每个代码块注入复制按钮（已存在则跳过，避免重复绑定）
   const codeBlocks = previewRef.value.querySelectorAll('pre')
   codeBlocks.forEach((block) => {
     if (block.querySelector('.copy-btn')) return
@@ -100,6 +106,7 @@ function handleContentClick(event: MouseEvent) {
   const anchor = target?.closest('a') as HTMLAnchorElement | null
   const href = anchor?.getAttribute('href')
 
+  // 仅拦截外链并新窗口打开，站内锚点与相对路径保持默认行为
   if (!href) return
   if (!href.startsWith('http://') && !href.startsWith('https://')) return
 

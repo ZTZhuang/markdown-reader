@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useFileStore } from '../composables/useFileStore'
@@ -20,63 +20,63 @@ const {
 
 const showNewFolderDialog = ref(false)
 const newFolderName = ref('')
-const fileInputRef = ref<HTMLInputElement | null>(null)
+// 上传中状态：用于禁用上传入口，避免重复触发
 const isUploading = ref(false)
-
-// 展开状态：记录哪些文件夹是展开的
+// 记录已展开的文件夹 ID，避免每次切换都折叠
 const expandedFolders = ref<Set<number>>(new Set())
-
-// 文件夹下的文件数量（用于显示展开图标）
+// 缓存每个文件夹的文件数，非当前文件夹也能展示数量
 const folderFileCounts = ref<Map<number, number>>(new Map())
 
-// 初始化加载
-onMounted(async () => {
-  await loadFolders()
-  // 加载每个文件夹的文件数量
-  await loadAllFolderFileCounts()
-})
-
-// 加载所有文件夹的文件数量
+// 初始化/刷新文件夹文件数缓存
 const loadAllFolderFileCounts = async () => {
   for (const folder of folders.value) {
-    if (folder.id) {
-      const folderFiles = await fileOps.getByFolder(folder.id)
-      folderFileCounts.value.set(folder.id, folderFiles.length)
-    }
+    if (!folder.id) continue
+    const folderFiles = await fileOps.getByFolder(folder.id)
+    folderFileCounts.value.set(folder.id, folderFiles.length)
   }
 }
 
-// 当选择文件夹时，自动展开
+onMounted(async () => {
+  await loadFolders()
+  await loadAllFolderFileCounts()
+})
+
 watch(currentFolderId, (newId) => {
   if (newId && !expandedFolders.value.has(newId)) {
     expandedFolders.value.add(newId)
   }
 })
 
-// 监听 folders 变化，更新文件数量
-watch(folders, async () => {
-  await loadAllFolderFileCounts()
-}, { deep: true })
+watch(
+  folders,
+  async () => {
+    await loadAllFolderFileCounts()
+  },
+  { deep: true }
+)
 
+const isMarkdownFile = (file: File): boolean => {
+  const lower = file.name.toLowerCase()
+  return lower.endsWith('.md') || lower.endsWith('.markdown')
+}
+
+// 展开时如果不是当前文件夹，顺带加载该文件夹文件列表
 const handleToggleExpand = async (folderId: number) => {
   if (expandedFolders.value.has(folderId)) {
     expandedFolders.value.delete(folderId)
-  } else {
-    expandedFolders.value.add(folderId)
-    // 如果当前没有选中这个文件夹，需要选中它来加载文件
-    if (currentFolderId.value !== folderId) {
-      await selectFolder(folderId)
-    }
+    return
+  }
+
+  expandedFolders.value.add(folderId)
+  if (currentFolderId.value !== folderId) {
+    await selectFolder(folderId)
   }
 }
 
-const isFolderExpanded = (folderId: number) => {
-  return expandedFolders.value.has(folderId)
-}
+const isFolderExpanded = (folderId: number) => expandedFolders.value.has(folderId)
 
 const handleFolderSelect = async (folderId: number) => {
   await selectFolder(folderId)
-  // 更新文件数量
   folderFileCounts.value.set(folderId, files.value.length)
 }
 
@@ -86,6 +86,7 @@ const handleCreateFolder = async () => {
     ElMessage.warning('请输入文件夹名称')
     return
   }
+
   try {
     const id = await createFolder(name)
     await handleFolderSelect(id)
@@ -94,21 +95,28 @@ const handleCreateFolder = async () => {
     showNewFolderDialog.value = false
     newFolderName.value = ''
     ElMessage.success('文件夹创建成功')
-  } catch (e) {
+  } catch {
     ElMessage.error('创建失败')
   }
 }
 
-const handleUploadClick = () => {
+const readFileContent = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve((reader.result as string) || '')
+    reader.onerror = () => reject(reader.error)
+    reader.readAsText(file, 'UTF-8')
+  })
+}
+
+// 文件选择上传：逐个读取并落库，最后统一提示结果
+const handleFileChange = async (event: Event) => {
   if (!currentFolderId.value) {
     ElMessage.warning('请先选择文件夹')
     return
   }
-  fileInputRef.value?.click()
-}
 
-const handleFileChange = async (e: Event) => {
-  const input = e.target as HTMLInputElement
+  const input = event.target as HTMLInputElement
   const selectedFiles = input.files
   if (!selectedFiles || selectedFiles.length === 0) return
 
@@ -116,95 +124,76 @@ const handleFileChange = async (e: Event) => {
   let successCount = 0
 
   for (const file of Array.from(selectedFiles)) {
-    if (!file.name.toLowerCase().endsWith('.md')) {
+    if (!isMarkdownFile(file)) {
       ElMessage.warning(`${file.name} 不是 Markdown 文件`)
       continue
     }
 
     try {
       const content = await readFileContent(file)
-      await createFile(file.name, content, currentFolderId.value!)
+      await createFile(file.name, content, currentFolderId.value)
       successCount++
-    } catch (err) {
+    } catch {
       ElMessage.error(`${file.name} 上传失败`)
     }
   }
 
   isUploading.value = false
-  input.value = '' // 重置 input
+  input.value = ''
 
-  if (successCount > 0) {
+  if (successCount > 0 && currentFolderId.value) {
     ElMessage.success(`成功上传 ${successCount} 个文件`)
-    // 更新文件数量
-    if (currentFolderId.value) {
-      folderFileCounts.value.set(currentFolderId.value, files.value.length)
-    }
+    folderFileCounts.value.set(currentFolderId.value, files.value.length)
   }
 }
 
-const readFileContent = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = () => reject(reader.error)
-    reader.readAsText(file, 'UTF-8')
-  })
-}
+const handleDrop = async (event: DragEvent) => {
+  event.preventDefault()
 
-const handleDrop = async (e: DragEvent) => {
-  e.preventDefault()
   if (!currentFolderId.value) {
     ElMessage.warning('请先选择文件夹')
     return
   }
 
-  const droppedFiles = e.dataTransfer?.files
+  const droppedFiles = event.dataTransfer?.files
   if (!droppedFiles || droppedFiles.length === 0) return
 
   isUploading.value = true
   let successCount = 0
 
   for (const file of Array.from(droppedFiles)) {
-    if (!file.name.toLowerCase().endsWith('.md')) {
-      continue
-    }
+    if (!isMarkdownFile(file)) continue
 
     try {
       const content = await readFileContent(file)
-      await createFile(file.name, content, currentFolderId.value!)
+      await createFile(file.name, content, currentFolderId.value)
       successCount++
-    } catch (err) {
-      console.error('上传失败', err)
+    } catch (error) {
+      console.error('上传失败', error)
     }
   }
 
   isUploading.value = false
 
-  if (successCount > 0) {
+  if (successCount > 0 && currentFolderId.value) {
     ElMessage.success(`成功上传 ${successCount} 个文件`)
-    if (currentFolderId.value) {
-      folderFileCounts.value.set(currentFolderId.value, files.value.length)
-    }
+    folderFileCounts.value.set(currentFolderId.value, files.value.length)
   }
 }
 
-const handleDragOver = (e: DragEvent) => {
-  e.preventDefault()
+// 仅阻止默认行为，允许放置文件到上传区域
+const handleDragOver = (event: DragEvent) => {
+  event.preventDefault()
 }
 
-// 获取文件夹文件数量
 const getFolderFileCount = (folderId: number): number => {
-  if (currentFolderId.value === folderId) {
-    return files.value.length
-  }
+  if (currentFolderId.value === folderId) return files.value.length
   return folderFileCounts.value.get(folderId) || 0
 }
-
 </script>
 
 <template>
   <div class="sidebar flex flex-col bg-white h-full">
-    <!-- 头部操作栏 -->
     <div class="p-3 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
       <h2 class="text-base font-medium text-gray-800">文件夹</h2>
       <button
@@ -218,7 +207,6 @@ const getFolderFileCount = (folderId: number): number => {
       </button>
     </div>
 
-    <!-- 文件夹和文件列表 -->
     <div class="flex-1 overflow-y-auto min-h-0">
       <div v-if="folders.length === 0" class="p-6 text-center">
         <div class="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
@@ -240,7 +228,6 @@ const getFolderFileCount = (folderId: number): number => {
           @toggle-expand="handleToggleExpand"
         />
 
-        <!-- 文件列表（展开时显示） -->
         <Transition name="collapse">
           <div v-if="isFolderExpanded(folder.id!) && currentFolderId === folder.id && files.length > 0" class="bg-gray-50/50">
             <FileItem
@@ -255,36 +242,35 @@ const getFolderFileCount = (folderId: number): number => {
       </template>
     </div>
 
-    <!-- 上传按钮 -->
+    <!-- 上传区域：支持点击与拖拽上传 -->
     <div
-      class="p-3 mb-4 border-t border-gray-100 safe-area-bottom flex-shrink-0"
+      class="relative p-3 mb-4 border-t border-gray-100 safe-area-bottom flex-shrink-0"
       @drop="handleDrop"
       @dragover="handleDragOver"
     >
       <button
         class="w-full py-3 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2"
-        :class="currentFolderId
-          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm active:scale-[0.98]'
-          : 'bg-gray-100 text-gray-400'"
-        :disabled="!currentFolderId"
-        @click="handleUploadClick"
+        :class="currentFolderId ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-sm active:scale-[0.98]' : 'bg-gray-100 text-gray-400'"
+        :disabled="!currentFolderId || isUploading"
       >
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
         </svg>
         <span>{{ isUploading ? '上传中...' : '上传 Markdown 文件' }}</span>
       </button>
+
+      <!-- 用真实 input 覆盖按钮，兼容安卓浏览器对程序化 click 的限制 -->
       <input
-        ref="fileInputRef"
         type="file"
-        accept=".md,.markdown"
+        accept=".md,.markdown,text/markdown,text/plain"
         multiple
-        class="hidden"
+        class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        :disabled="!currentFolderId || isUploading"
         @change="handleFileChange"
       />
     </div>
 
-    <!-- 新建文件夹弹窗 - 居中显示 -->
+    <!-- 新建文件夹弹窗挂载到 body，避免被侧栏容器裁切 -->
     <Teleport to="body">
       <Transition name="fade">
         <div
@@ -338,7 +324,6 @@ const getFolderFileCount = (folderId: number): number => {
   opacity: 0;
 }
 
-/* 折叠动画 */
 .collapse-enter-active,
 .collapse-leave-active {
   transition: all 0.25s ease;
